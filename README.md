@@ -24,7 +24,7 @@ Many people have good intentions but lose track of what they planned to do. This
 
 - **User accounts:** sign up, log in, and keep a private task list
 - **To-do list (CRUD):** create, view, edit, and delete tasks, with due dates
-- **Email reminders:** the app emails the user before a task is due
+- **No email reminders:** users must log in to encourage daily checking of tasks
 - **Progress tracking:** shows how many tasks are completed and how many were missed
 - **"Hitting the Mark" reward system:** points and levels based on follow-through
   - Adding and completing tasks earns points, so the level goes up
@@ -37,7 +37,6 @@ Many people have good intentions but lose track of what they planned to do. This
 - .NET Blazor web application
 - ASP.NET Core Identity for authentication
 - Entity Framework Core for the database
-- Email delivery through an email service (to be chosen)
 - Deployment to a cloud service
 
 ## Project management

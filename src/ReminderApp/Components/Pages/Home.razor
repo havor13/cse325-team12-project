@@ -1,0 +1,13 @@
+@page "/"
+
+<PageTitle>Reminder Web App</PageTitle>
+
+<div class="card">
+    <h1>Hit the mark 🎯</h1>
+    <p>Turn your task list into a game. Break tasks into steps, set a due date, and earn points and levels for finishing on time.</p>
+    <p>Missed tasks cost points, so check your dashboard every day.</p>
+    <AuthorizeView>
+        <Authorized><a class="btn" href="dashboard">Go to dashboard</a></Authorized>
+        <NotAuthorized><a class="btn" href="login">Sign in (dev)</a></NotAuthorized>
+    </AuthorizeView>
+</div>

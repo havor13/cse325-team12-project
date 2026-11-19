@@ -1,0 +1,14 @@
+<nav class="nav">
+    <span class="brand">🎯 Reminder</span>
+    <NavLink href="" Match="NavLinkMatch.All">Home</NavLink>
+    <AuthorizeView>
+        <Authorized>
+            <NavLink href="dashboard">Dashboard</NavLink>
+            <NavLink href="tasks">Tasks</NavLink>
+            <a href="logout" class="right">Sign out</a>
+        </Authorized>
+        <NotAuthorized>
+            <a href="login" class="right">Sign in (dev)</a>
+        </NotAuthorized>
+    </AuthorizeView>
+</nav>

@@ -1,0 +1,89 @@
+@page "/tasks/{Id:int}"
+@attribute [Authorize]
+@inject CurrentUserService Users
+@inject TaskService Tasks
+@inject NavigationManager Nav
+
+<PageTitle>Edit task</PageTitle>
+<h1>Edit task</h1>
+
+@if (task is null)
+{
+    <p>Task not found.</p>
+}
+else
+{
+    <section class="card">
+        <label>Title <input @bind="title" /></label>
+        <label>Due date <InputDate @bind-Value="dueOn" /></label>
+        @if (dueOn != task.DueOn)
+        {
+            <p class="warn">Changing the due date removes the early-completion bonus for this task.</p>
+        }
+        <button @onclick="SaveAsync">Save</button>
+        <a class="btn secondary" href="tasks">Back</a>
+        @if (error is not null) { <p class="error">@error</p> }
+    </section>
+
+    <section class="card">
+        <h2>Steps</h2>
+        <ul class="steps">
+            @foreach (var s in task.Steps)
+            {
+                <li>@s.Description <button class="danger" @onclick="() => RemoveStepAsync(s.Id)">Remove</button></li>
+            }
+        </ul>
+        <input @bind="newStep" placeholder="New step" />
+        <button @onclick="AddStepAsync">Add step</button>
+    </section>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private AppUser? user;
+    private TaskItem? task;
+    private string title = "";
+    private DateOnly dueOn;
+    private string newStep = "";
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        user = await Users.GetAsync();
+        await LoadAsync(resetFields: true);
+    }
+
+    private async Task LoadAsync(bool resetFields)
+    {
+        if (user is null) return;
+        task = await Tasks.GetAsync(user.Id, Id);
+        if (task is not null && resetFields) { title = task.Title; dueOn = task.DueOn; }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (user is null) return;
+        try
+        {
+            await Tasks.UpdateAsync(user.Id, Id, title, dueOn);
+            Nav.NavigateTo("tasks");
+        }
+        catch (ArgumentException ex) { error = ex.Message; }
+    }
+
+    private async Task AddStepAsync()
+    {
+        if (user is null) return;
+        await Tasks.AddStepAsync(user.Id, Id, newStep);
+        newStep = "";
+        await LoadAsync(resetFields: false);
+    }
+
+    private async Task RemoveStepAsync(int stepId)
+    {
+        if (user is null) return;
+        await Tasks.RemoveStepAsync(user.Id, stepId);
+        await LoadAsync(resetFields: false);
+    }
+}

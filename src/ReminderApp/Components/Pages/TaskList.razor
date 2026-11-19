@@ -1,0 +1,113 @@
+@page "/tasks"
+@attribute [Authorize]
+@inject CurrentUserService Users
+@inject TaskService Tasks
+
+<PageTitle>My tasks</PageTitle>
+<h1>My tasks</h1>
+
+<section class="card">
+    <h2>New task</h2>
+    <EditForm Model="form" OnValidSubmit="CreateAsync">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+        <label>Task <InputText @bind-Value="form.Title" /></label>
+        <label>Due date (within @TaskService.MaxDueDays days) <InputDate @bind-Value="form.DueOn" /></label>
+        <label>Steps (one per line) <InputTextArea @bind-Value="form.StepsText" rows="4" /></label>
+        <button type="submit">Add task</button>
+    </EditForm>
+    @if (error is not null) { <p class="error">@error</p> }
+</section>
+
+@if (tasks is null)
+{
+    <p>Loading…</p>
+}
+else if (tasks.Count == 0)
+{
+    <p>No tasks yet. Add your first one above.</p>
+}
+else
+{
+    @foreach (var t in tasks)
+    {
+        <section class="card @t.Status.ToString().ToLower()">
+            <h3>@t.Title <small>(@t.Status)</small></h3>
+            <p>Due @t.DueOn.ToString("ddd d MMM") · @t.ProgressPercent.ToString("0.##")% done</p>
+            <div class="bar"><div class="fill" style="width:@(t.ProgressPercent.ToString("0.##"))%"></div></div>
+            <ul class="steps">
+                @foreach (var s in t.Steps)
+                {
+                    <li>
+                        <label>
+                            <input type="checkbox" checked="@s.IsDone"
+                                   disabled="@(t.Status != TaskState.Pending)"
+                                   @onchange="() => ToggleAsync(s.Id)" />
+                            @s.Description <small>(@t.StepPercent.ToString("0.##")%)</small>
+                        </label>
+                    </li>
+                }
+            </ul>
+            @if (t.Status == TaskState.Pending)
+            {
+                <a class="btn secondary" href="tasks/@t.Id">Edit</a>
+            }
+            <button class="danger" @onclick="() => DeleteAsync(t.Id)">Delete</button>
+        </section>
+    }
+}
+
+@code {
+    private AppUser? user;
+    private List<TaskItem>? tasks;
+    private string? error;
+    private readonly NewTaskForm form = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        user = await Users.GetAsync();
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        if (user is null) return;
+        await Tasks.SweepMissedAsync(user.Id);
+        tasks = await Tasks.GetAllAsync(user.Id);
+    }
+
+    private async Task CreateAsync()
+    {
+        if (user is null) return;
+        try
+        {
+            var steps = form.StepsText.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            await Tasks.CreateAsync(user.Id, form.Title, form.DueOn, steps);
+            form.Title = ""; form.StepsText = "";
+            error = null;
+            await ReloadAsync();
+        }
+        catch (ArgumentException ex) { error = ex.Message; }
+    }
+
+    private async Task ToggleAsync(int stepId)
+    {
+        if (user is null) return;
+        await Tasks.ToggleStepAsync(user.Id, stepId);
+        await ReloadAsync();
+    }
+
+    private async Task DeleteAsync(int taskId)
+    {
+        if (user is null) return;
+        await Tasks.DeleteAsync(user.Id, taskId);
+        await ReloadAsync();
+    }
+
+    private class NewTaskForm
+    {
+        [Required, StringLength(200)] public string Title { get; set; } = "";
+        public DateOnly DueOn { get; set; } = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1));
+        [Required(ErrorMessage = "Add at least one step.")] public string StepsText { get; set; } = "";
+    }
+}

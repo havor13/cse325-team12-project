@@ -70,9 +70,35 @@ More detail:
 
 ## Getting started
 
+Requires the [.NET 8 SDK](https://dotnet.microsoft.com/download).
+
 1. Clone the repository: `git clone https://github.com/havor13/cse325-team12-project.git`
 2. Open the folder in Visual Studio Code.
-3. The application code is added to this repository as the project is built. Run instructions will be added here at that point.
+3. Trust the HTTPS development certificate (first time only): `dotnet dev-certs https --trust`
+4. Run the app:
+   ```
+   cd src/ReminderApp
+   dotnet run --launch-profile https
+   ```
+5. Open https://localhost:7080 and click **Sign in (dev)**.
+
+No credentials are needed. Sign-in is a **development-only stub** that works only when `ASPNETCORE_ENVIRONMENT=Development` (the `https` launch profile sets this). Use `https://localhost:7080/login?user=alice` to sign in as a different test user. Real OAuth is still to be built (feature 1).
+
+The database is a local SQLite file (`reminder.db`), created automatically on first run. It is git-ignored. Delete it to start fresh.
+
+Run the tests from the repository root with `dotnet test`.
+
+## Project structure
+
+```
+src/ReminderApp/
+  Program.cs            app setup, dev sign-in stub
+  Models/               AppUser, TaskItem, TaskStep, PointsEntry
+  Data/                 EF Core DbContext
+  Services/             TaskService, PointsService, LevelService, QuoteService, CurrentUserService
+  Components/Pages/     Home, Dashboard, TaskList, TaskEdit
+tests/ReminderApp.Tests/ unit tests for the points and level rules
+```
 
 ## Working together
 

@@ -1,0 +1,91 @@
+@page "/dashboard"
+@attribute [Authorize]
+@inject CurrentUserService Users
+@inject TaskService Tasks
+@inject AuthenticationStateProvider Auth
+
+<PageTitle>Dashboard</PageTitle>
+<h1>Dashboard</h1>
+
+@if (user is null)
+{
+    <p>Loading…</p>
+}
+else
+{
+    var level = LevelService.GetLevel(user.Points);
+    var next = LevelService.GetNext(user.Points);
+
+    @if (!string.IsNullOrEmpty(quote))
+    {
+        <blockquote class="quote">“@quote”</blockquote>
+    }
+
+    <section class="card">
+        <h2>@level.Badge Level @level.Number: @level.Title</h2>
+        <p>@user.Points points @(next is null ? "· max level reached" : $"· {next.MinPoints - user.Points} to {next.Title} {next.Badge}")</p>
+        <div class="bar"><div class="fill" style="width:@(LevelService.ProgressToNext(user.Points).ToString("0.#"))%"></div></div>
+        <details>
+            <summary>Level milestones</summary>
+            <ul>
+                @foreach (var l in LevelService.Levels)
+                {
+                    <li>@l.Badge @l.Title: @l.MinPoints points @(l.Number == level.Number ? "(you are here)" : "")</li>
+                }
+            </ul>
+        </details>
+    </section>
+
+    <section class="card">
+        <h2>Due soon (next 3 days)</h2>
+        @if (dueSoon.Count == 0)
+        {
+            <p>Nothing due soon. 🎉</p>
+        }
+        else
+        {
+            <ul>
+                @foreach (var t in dueSoon)
+                {
+                    <li><a href="tasks/@t.Id">@t.Title</a>: due @t.DueOn.ToString("ddd d MMM") · @t.ProgressPercent.ToString("0")% done</li>
+                }
+            </ul>
+        }
+    </section>
+
+    <section class="card">
+        <h2>Upcoming calendar</h2>
+        @* TODO (feature 6): replace this list with a Calendar API/component once the team picks one. *@
+        @foreach (var group in upcoming.GroupBy(t => t.DueOn))
+        {
+            <div class="cal-row">
+                <strong>@group.Key.ToString("ddd d MMM")</strong>
+                <span>@string.Join(", ", group.Select(t => t.Title))</span>
+            </div>
+        }
+        @if (upcoming.Count == 0) { <p>No upcoming due dates.</p> }
+    </section>
+}
+
+@code {
+    private AppUser? user;
+    private string? quote;
+    private List<TaskItem> dueSoon = new();
+    private List<TaskItem> upcoming = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var principal = (await Auth.GetAuthenticationStateAsync()).User;
+        quote = principal.FindFirst("quote")?.Value;
+
+        user = await Users.GetAsync();
+        if (user is null) return;
+
+        await Tasks.SweepMissedAsync(user.Id);   // apply penalties for overdue tasks
+        user = await Users.GetAsync();           // reload points
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        upcoming = (await Tasks.GetAllAsync(user!.Id)).Where(t => t.Status == TaskState.Pending).ToList();
+        dueSoon = upcoming.Where(t => t.DueOn <= today.AddDays(3)).ToList();
+    }
+}

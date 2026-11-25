@@ -12,6 +12,11 @@ public static class QuoteService
         "Well begun is half done.",
         "What you do today can improve all your tomorrows.",
         "Discipline is choosing what you want most over what you want now.",
+        "Believe you can and you're halfway there.",
+        "Success is the sum of small efforts repeated day in and day out.",
+        "The secret of getting ahead is getting started.",
+        "Great things are done by a series of small things brought together.",
+        "It always seems impossible until it's done."
     };
 
     public static string GetRandom() => Quotes[Random.Shared.Next(Quotes.Length)];

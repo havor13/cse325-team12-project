@@ -1,7 +1,8 @@
 @page "/tasks"
 @attribute [Authorize]
 @inject CurrentUserService Users
-@inject TaskService Tasks
+@inject TaskService TaskSvc
+@inject IJSRuntime JS
 
 <PageTitle>My tasks</PageTitle>
 <h1>My tasks</h1>
@@ -12,9 +13,12 @@
         <DataAnnotationsValidator />
         <ValidationSummary />
         <label>Task <InputText @bind-Value="form.Title" /></label>
-        <label>Due date (within @TaskService.MaxDueDays days) <InputDate @bind-Value="form.DueOn" /></label>
+        <label>
+            Due date (within @TaskService.MaxDueDays days)
+            <InputDate @bind-Value="form.DueOn" min="@MinDate" max="@MaxDate" />
+        </label>
         <label>Steps (one per line) <InputTextArea @bind-Value="form.StepsText" rows="4" /></label>
-        <button type="submit">Add task</button>
+        <button type="submit" disabled="@busy">@(busy ? "Adding…" : "Add task")</button>
     </EditForm>
     @if (error is not null) { <p class="error">@error</p> }
 </section>
@@ -23,16 +27,28 @@
 {
     <p>Loading…</p>
 }
-else if (tasks.Count == 0)
-{
-    <p>No tasks yet. Add your first one above.</p>
-}
 else
 {
-    @foreach (var t in tasks)
+    <div class="tabs">
+        @foreach (var f in Enum.GetValues<Filter>())
+        {
+            var current = f;
+            <button class="tab @(filter == current ? "active" : "")" @onclick="() => filter = current">
+                @current (@Count(current))
+            </button>
+        }
+    </div>
+
+    var visible = Visible.ToList();
+    if (visible.Count == 0)
+    {
+        <p>@(tasks.Count == 0 ? "No tasks yet. Add your first one above." : "No tasks in this view.")</p>
+    }
+
+    foreach (var t in visible)
     {
         <section class="card @t.Status.ToString().ToLower()">
-            <h3>@t.Title <small>(@t.Status)</small></h3>
+            <h3>@t.Title <DueBadge Item="t" /></h3>
             <p>Due @t.DueOn.ToString("ddd d MMM") · @t.ProgressPercent.ToString("0.##")% done</p>
             <div class="bar"><div class="fill" style="width:@(t.ProgressPercent.ToString("0.##"))%"></div></div>
             <ul class="steps">
@@ -52,16 +68,35 @@ else
             {
                 <a class="btn secondary" href="tasks/@t.Id">Edit</a>
             }
-            <button class="danger" @onclick="() => DeleteAsync(t.Id)">Delete</button>
+            <button class="danger" @onclick="() => DeleteAsync(t)">Delete</button>
         </section>
     }
 }
 
 @code {
+    private enum Filter { All, Active, Completed, Missed }
+
     private AppUser? user;
     private List<TaskItem>? tasks;
     private string? error;
+    private bool busy;
+    private Filter filter = Filter.Active;
     private readonly NewTaskForm form = new();
+
+    private static string MinDate => DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd");
+    private static string MaxDate => DateOnly.FromDateTime(DateTime.UtcNow).AddDays(TaskService.MaxDueDays).ToString("yyyy-MM-dd");
+
+    private IEnumerable<TaskItem> Visible => tasks!.Where(t => Matches(t, filter));
+
+    private static bool Matches(TaskItem t, Filter f) => f switch
+    {
+        Filter.Active => t.Status == TaskState.Pending,
+        Filter.Completed => t.Status == TaskState.Completed,
+        Filter.Missed => t.Status == TaskState.Missed,
+        _ => true
+    };
+
+    private int Count(Filter f) => tasks!.Count(t => Matches(t, f));
 
     protected override async Task OnInitializedAsync()
     {
@@ -72,35 +107,39 @@ else
     private async Task ReloadAsync()
     {
         if (user is null) return;
-        await Tasks.SweepMissedAsync(user.Id);
-        tasks = await Tasks.GetAllAsync(user.Id);
+        await TaskSvc.SweepMissedAsync(user.Id);
+        tasks = await TaskSvc.GetAllAsync(user.Id);
     }
 
     private async Task CreateAsync()
     {
-        if (user is null) return;
+        if (user is null || busy) return;
+        busy = true;
         try
         {
             var steps = form.StepsText.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            await Tasks.CreateAsync(user.Id, form.Title, form.DueOn, steps);
+            await TaskSvc.CreateAsync(user.Id, form.Title, form.DueOn, steps);
             form.Title = ""; form.StepsText = "";
             error = null;
+            filter = Filter.Active;
             await ReloadAsync();
         }
         catch (ArgumentException ex) { error = ex.Message; }
+        finally { busy = false; }
     }
 
     private async Task ToggleAsync(int stepId)
     {
         if (user is null) return;
-        await Tasks.ToggleStepAsync(user.Id, stepId);
+        await TaskSvc.ToggleStepAsync(user.Id, stepId);
         await ReloadAsync();
     }
 
-    private async Task DeleteAsync(int taskId)
+    private async Task DeleteAsync(TaskItem task)
     {
         if (user is null) return;
-        await Tasks.DeleteAsync(user.Id, taskId);
+        if (!await JS.InvokeAsync<bool>("confirm", $"Delete \"{task.Title}\"? This cannot be undone.")) return;
+        await TaskSvc.DeleteAsync(user.Id, task.Id);
         await ReloadAsync();
     }
 

@@ -1,27 +1,37 @@
 @page "/tasks/{Id:int}"
 @attribute [Authorize]
 @inject CurrentUserService Users
-@inject TaskService Tasks
+@inject TaskService TaskSvc
 @inject NavigationManager Nav
 
 <PageTitle>Edit task</PageTitle>
 <h1>Edit task</h1>
 
-@if (task is null)
+@if (!loaded)
 {
-    <p>Task not found.</p>
+    <p>Loading…</p>
+}
+else if (task is null || task.Status != TaskState.Pending)
+{
+    <div class="card">
+        <p>This task was not found, or it can no longer be edited (completed and missed tasks are locked).</p>
+        <a class="btn secondary" href="tasks">Back to tasks</a>
+    </div>
 }
 else
 {
     <section class="card">
-        <label>Title <input @bind="title" /></label>
-        <label>Due date <InputDate @bind-Value="dueOn" /></label>
+        <label>Title <input @bind="title" maxlength="200" /></label>
+        <label>
+            Due date
+            <input type="date" @bind="dueOn" @bind:format="yyyy-MM-dd" min="@MinDate" max="@MaxDate" />
+        </label>
         @if (dueOn != task.DueOn)
         {
             <p class="warn">Changing the due date removes the early-completion bonus for this task.</p>
         }
-        <button @onclick="SaveAsync">Save</button>
-        <a class="btn secondary" href="tasks">Back</a>
+        <button @onclick="SaveAsync" disabled="@(saving || string.IsNullOrWhiteSpace(title))">@(saving ? "Saving…" : "Save")</button>
+        <a class="btn secondary" href="tasks">Cancel</a>
         @if (error is not null) { <p class="error">@error</p> }
     </section>
 
@@ -30,11 +40,18 @@ else
         <ul class="steps">
             @foreach (var s in task.Steps)
             {
-                <li>@s.Description <button class="danger" @onclick="() => RemoveStepAsync(s.Id)">Remove</button></li>
+                <li>
+                    @s.Description
+                    @if (task.Steps.Count > 1)
+                    {
+                        <button class="danger" @onclick="() => RemoveStepAsync(s.Id)">Remove</button>
+                    }
+                </li>
             }
         </ul>
-        <input @bind="newStep" placeholder="New step" />
-        <button @onclick="AddStepAsync">Add step</button>
+        @if (task.Steps.Count == 1) { <p><small>A task needs at least one step.</small></p> }
+        <input @bind="newStep" @bind:event="oninput" placeholder="New step" />
+        <button @onclick="AddStepAsync" disabled="@string.IsNullOrWhiteSpace(newStep)">Add step</button>
     </section>
 }
 
@@ -43,39 +60,46 @@ else
 
     private AppUser? user;
     private TaskItem? task;
+    private bool loaded, saving;
     private string title = "";
     private DateOnly dueOn;
     private string newStep = "";
     private string? error;
 
+    private static string MinDate => DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd");
+    private static string MaxDate => DateOnly.FromDateTime(DateTime.UtcNow).AddDays(TaskService.MaxDueDays).ToString("yyyy-MM-dd");
+
     protected override async Task OnInitializedAsync()
     {
         user = await Users.GetAsync();
         await LoadAsync(resetFields: true);
+        loaded = true;
     }
 
     private async Task LoadAsync(bool resetFields)
     {
         if (user is null) return;
-        task = await Tasks.GetAsync(user.Id, Id);
+        task = await TaskSvc.GetAsync(user.Id, Id);
         if (task is not null && resetFields) { title = task.Title; dueOn = task.DueOn; }
     }
 
     private async Task SaveAsync()
     {
-        if (user is null) return;
+        if (user is null || saving) return;
+        saving = true;
         try
         {
-            await Tasks.UpdateAsync(user.Id, Id, title, dueOn);
+            await TaskSvc.UpdateAsync(user.Id, Id, title, dueOn);
             Nav.NavigateTo("tasks");
         }
         catch (ArgumentException ex) { error = ex.Message; }
+        finally { saving = false; }
     }
 
     private async Task AddStepAsync()
     {
         if (user is null) return;
-        await Tasks.AddStepAsync(user.Id, Id, newStep);
+        await TaskSvc.AddStepAsync(user.Id, Id, newStep);
         newStep = "";
         await LoadAsync(resetFields: false);
     }
@@ -83,7 +107,7 @@ else
     private async Task RemoveStepAsync(int stepId)
     {
         if (user is null) return;
-        await Tasks.RemoveStepAsync(user.Id, stepId);
+        await TaskSvc.RemoveStepAsync(user.Id, stepId);
         await LoadAsync(resetFields: false);
     }
 }

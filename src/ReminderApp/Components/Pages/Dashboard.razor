@@ -1,7 +1,7 @@
 @page "/dashboard"
 @attribute [Authorize]
 @inject CurrentUserService Users
-@inject TaskService Tasks
+@inject TaskService TaskSvc
 @inject AuthenticationStateProvider Auth
 
 <PageTitle>Dashboard</PageTitle>
@@ -16,7 +16,7 @@ else
     var level = LevelService.GetLevel(user.Points);
     var next = LevelService.GetNext(user.Points);
 
-    @if (!string.IsNullOrEmpty(quote))
+    if (!string.IsNullOrEmpty(quote))
     {
         <blockquote class="quote">“@quote”</blockquote>
     }
@@ -36,6 +36,12 @@ else
         </details>
     </section>
 
+    <div class="stats">
+        <div class="card stat"><strong>@upcoming.Count</strong><span>Active</span></div>
+        <div class="card stat"><strong>@completedCount</strong><span>Completed</span></div>
+        <div class="card stat"><strong>@missedCount</strong><span>Missed</span></div>
+    </div>
+
     <section class="card">
         <h2>Due soon (next 3 days)</h2>
         @if (dueSoon.Count == 0)
@@ -47,31 +53,58 @@ else
             <ul>
                 @foreach (var t in dueSoon)
                 {
-                    <li><a href="tasks/@t.Id">@t.Title</a>: due @t.DueOn.ToString("ddd d MMM") · @t.ProgressPercent.ToString("0")% done</li>
+                    <li>
+                        <a href="tasks/@t.Id">@t.Title</a>
+                        <DueBadge Item="t" />
+                        · due @t.DueOn.ToString("ddd d MMM") · @t.ProgressPercent.ToString("0")% done
+                    </li>
                 }
             </ul>
         }
     </section>
 
     <section class="card">
-        <h2>Upcoming calendar</h2>
-        @* TODO (feature 6): replace this list with a Calendar API/component once the team picks one. *@
-        @foreach (var group in upcoming.GroupBy(t => t.DueOn))
+        <h2>@today.ToString("MMMM yyyy")</h2>
+        @* TODO (feature 6): swap this built-in grid for the chosen Calendar API/component if the team picks one. *@
+        <div class="cal">
+            @foreach (var d in new[] { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" })
+            {
+                <div class="cal-head">@d</div>
+            }
+            @for (var i = 0; i < LeadingBlanks; i++)
+            {
+                <div class="cal-cell empty"></div>
+            }
+            @for (var day = 1; day <= DateTime.DaysInMonth(today.Year, today.Month); day++)
+            {
+                var date = new DateOnly(today.Year, today.Month, day);
+                var due = upcoming.Where(t => t.DueOn == date).ToList();
+                <div class="cal-cell @(date == today ? "today" : "")" title="@string.Join(", ", due.Select(t => t.Title))">
+                    <span>@day</span>
+                    @if (due.Count > 0)
+                    {
+                        <span class="dot">@due.Count</span>
+                    }
+                </div>
+            }
+        </div>
+        @if (upcoming.Count == 0)
         {
-            <div class="cal-row">
-                <strong>@group.Key.ToString("ddd d MMM")</strong>
-                <span>@string.Join(", ", group.Select(t => t.Title))</span>
-            </div>
+            <p>No upcoming due dates.</p>
         }
-        @if (upcoming.Count == 0) { <p>No upcoming due dates.</p> }
     </section>
 }
 
 @code {
     private AppUser? user;
     private string? quote;
+    private DateOnly today = DateOnly.FromDateTime(DateTime.UtcNow);
     private List<TaskItem> dueSoon = new();
     private List<TaskItem> upcoming = new();
+    private int completedCount, missedCount;
+
+    // Monday-first grid: how many empty cells before the 1st of the month.
+    private int LeadingBlanks => ((int)new DateOnly(today.Year, today.Month, 1).DayOfWeek + 6) % 7;
 
     protected override async Task OnInitializedAsync()
     {
@@ -81,11 +114,13 @@ else
         user = await Users.GetAsync();
         if (user is null) return;
 
-        await Tasks.SweepMissedAsync(user.Id);   // apply penalties for overdue tasks
-        user = await Users.GetAsync();           // reload points
+        await TaskSvc.SweepMissedAsync(user.Id);   // apply penalties for overdue tasks
+        user = await Users.GetAsync();             // reload points
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        upcoming = (await Tasks.GetAllAsync(user!.Id)).Where(t => t.Status == TaskState.Pending).ToList();
+        var all = await TaskSvc.GetAllAsync(user!.Id);
+        upcoming = all.Where(t => t.Status == TaskState.Pending).ToList();
         dueSoon = upcoming.Where(t => t.DueOn <= today.AddDays(3)).ToList();
+        completedCount = all.Count(t => t.Status == TaskState.Completed);
+        missedCount = all.Count(t => t.Status == TaskState.Missed);
     }
 }

@@ -1,0 +1,32 @@
+<span class="badge @Css">@Text</span>
+
+@code {
+    [Parameter, EditorRequired] public TaskItem Item { get; set; } = default!;
+
+    private int Days => Item.DueOn.DayNumber - DateOnly.FromDateTime(DateTime.UtcNow).DayNumber;
+
+    private string Text
+    {
+        get
+        {
+            if (Item.Status == TaskState.Completed) return "Completed";
+            if (Item.Status == TaskState.Missed) return "Missed";
+            if (Days < 0) return "Overdue";
+            if (Days == 0) return "Due today";
+            if (Days == 1) return "Due tomorrow";
+            return $"{Days} days left";
+        }
+    }
+
+    private string Css
+    {
+        get
+        {
+            if (Item.Status == TaskState.Completed) return "ok";
+            if (Item.Status == TaskState.Missed) return "bad";
+            if (Days <= 0) return "bad";
+            if (Days <= 3) return "warn";
+            return "";
+        }
+    }
+}

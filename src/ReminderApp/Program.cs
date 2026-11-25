@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using ReminderApp.Components;
 using ReminderApp.Data;
 using ReminderApp.Services;
+using Microsoft.AspNetCore.Authentication.Google;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,11 +17,17 @@ builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddDbContextFactory<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("Default")));
 
-// Authentication. Cookie-only for now: sign-in is a development stub (see /login below).
-// TODO (feature 1): replace the stub with real OAuth (Google, Microsoft, or GitHub).
+// OAuth authentication. Google is the only provider supported for now.
 builder.Services
     .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
-    .AddCookie(options => options.LoginPath = "/login");
+    .AddCookie(options => options.LoginPath = "/login")
+    .AddGoogle(options =>
+    {
+        options.ClientId = builder.Configuration["Authentication:Google:ClientId"]
+    ?? throw new InvalidOperationException("Missing Authentication:Google:ClientId");
+        options.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"]
+            ?? throw new InvalidOperationException("Missing Authentication:Google:ClientSecret");
+    });
 builder.Services.AddAuthorization();
 
 builder.Services.AddScoped<CurrentUserService>();
@@ -49,25 +56,14 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
 
-// DEVELOPMENT ONLY: signs in as a test user so the team can work without OAuth credentials.
-// Use /login?user=alice to switch between test users (each has separate tasks and points).
-app.MapGet("/login", async (HttpContext ctx, string? user, string? returnUrl) =>
+// OAuth challenge endpoints. The login endpoint redirects to Google, and the logout endpoint clears the cookie.
+app.MapGet("/login", (string? returnUrl) =>
 {
-    if (!app.Environment.IsDevelopment()) return Results.NotFound();
-
-    var name = string.IsNullOrWhiteSpace(user) ? "dev-user" : user.Trim().ToLowerInvariant();
-    var claims = new[]
-    {
-        new Claim(ClaimTypes.NameIdentifier, $"dev:{name}"),
-        new Claim(ClaimTypes.Name, name),
-        new Claim("quote", QuoteService.GetRandom()), // feature 8: new quote at each sign-in
-    };
-    var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme));
-    await ctx.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal);
-
     var target = !string.IsNullOrEmpty(returnUrl) && returnUrl.StartsWith('/') && !returnUrl.StartsWith("//")
         ? returnUrl : "/dashboard";
-    return Results.Redirect(target);
+
+    var props = new AuthenticationProperties { RedirectUri = target };
+    return Results.Challenge(props, [GoogleDefaults.AuthenticationScheme]);
 });
 
 app.MapGet("/logout", async (HttpContext ctx) =>
